@@ -11,8 +11,10 @@ def _get_rag_search():
           _rag_search = RAGSearch()
      return _rag_search
 
-def call_LLM(query: str, top_k: int = 3) -> str:
-     """Run the RAG search + summarization for `query` and return the summary.
+def call_LLM(query: str, top_k: int = 3) -> dict:
+     """Run the RAG search + summarization for `query` and return a dict with
+     the generated answer and the list of source passages (file + page) it
+     was grounded in.
 
      This function is safe to call from an API endpoint.
      """
@@ -24,4 +26,10 @@ if __name__ == "__main__":
      # Simple CLI entrypoint for local testing
      rag = _get_rag_search()
      q = input("Enter your query: ")
-     print(call_LLM(q, top_k=3))
+     result = call_LLM(q, top_k=3)
+     print("\nAnswer:", result["summary"])
+     if result["sources"]:
+          print("\nSources:")
+          for s in result["sources"]:
+               page = f", page {s['page']}" if s["page"] is not None else ""
+               print(f"  - {s['source']}{page}")
