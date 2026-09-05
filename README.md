@@ -1,193 +1,97 @@
-# RAG Project
+# Assistant de lecture d'articles scientifiques (RAG)
 
-Ce projet implémente un pipeline RAG (Retrieval-Augmented Generation) personnalisé avec une architecture modulaire basée sur FAISS et Sentence Transformers pour la recherche sémantique, et Groq LLM pour la génération de réponses.
+Pipeline RAG (Retrieval-Augmented Generation) qui permet de poser des questions en langage naturel sur un corpus de documents (PDF, TXT, CSV, Excel, Word, JSON) et d'obtenir une réponse générée à partir des passages les plus pertinents — au lieu de laisser un LLM répondre "à l'aveugle" sur un sujet qu'il n'a jamais vu.
 
-## Architecture RAG
+## Pourquoi ce projet
 
-### 1. Pipeline d'Embeddings
-- **Modèle** : Sentence Transformers (all-MiniLM-L6-v2)
-- **Chunking** : Découpage des documents avec chevauchement (1000 tokens, 200 tokens d'overlap)
-- **Stockage** : FAISS (IndexFlatL2) pour la recherche de similarité efficace
-- **Persistance** : Sauvegarde des index FAISS et métadonnées sur disque
+Interroger un LLM directement sur un document long (article scientifique, rapport, cours) produit des réponses génériques ou des hallucinations dès que le contenu sort des données d'entraînement du modèle. Ce projet construit le pipeline complet — indexation, recherche vectorielle, génération — pour ancrer les réponses dans le texte source réel.
 
-### 2. Retrieval
-- Base vectorielle FAISS pour la recherche par similarité cosinus
-- Requête par embeddings du texte utilisateur
-- Récupération des top-k documents les plus pertinents (k=3 par défaut)
-- Conservation des métadonnées et texte source
+## Démo
 
-### 3. Generation
-- **LLM** : Groq (llama-3.3-70b-versatile)
-- **Prompt Template** : Format question-contexte-réponse
-- Génération de résumé basé sur le contexte retrouvé
+> Capture d'écran / GIF à ajouter ici (ex. `docs/demo.png`) — appel `POST /call_llm/` avec une question et la réponse générée.
 
-### 4. Interface
-- API REST avec FastAPI
-- Endpoints pour requêtes synchrones
-- Support format JSON pour requêtes/réponses
+## Architecture
 
-## Structure du projet
-
+```mermaid
+flowchart LR
+    A[Documents\nPDF · TXT · CSV · DOCX · JSON] --> B[Chunking\n1000 tokens / overlap 200]
+    B --> C[Embeddings\nall-MiniLM-L6-v2]
+    C --> D[(Index FAISS\nIndexFlatL2)]
+    E[Question utilisateur] --> F[Recherche par similarité\ntop-k passages]
+    D --> F
+    F --> G[Groq LLM\nllama-3.3-70b-versatile]
+    G --> H[Réponse générée]
 ```
-Rag_project/
-│
-├── app.py
-├── requirements.txt
-├── data/                # Place tes documents ici
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py
-│   ├── embedding.py
-│   ├── search.py
-│   ├── vectorstore.py
-│   └── ...
-└── main.py
 
-```
+| Étape | Détail |
+|---|---|
+| **Chargement** | `src/data_loader.py` — PDF, TXT, CSV, Excel, Word, JSON via LangChain community loaders |
+| **Chunking** | `RecursiveCharacterTextSplitter` — 1000 tokens, 200 tokens de chevauchement |
+| **Embeddings** | `sentence-transformers` (`all-MiniLM-L6-v2`) |
+| **Stockage vectoriel** | FAISS (`IndexFlatL2`), persistance sur disque ; support ChromaDB en alternative |
+| **Génération** | Groq API, `llama-3.3-70b-versatile`, réponse citant les passages utilisés |
+| **Interface** | API REST FastAPI (`main.py`) — endpoint `POST /call_llm/`, renvoie la réponse **et** ses sources (fichier + page) |
 
 ## Installation
 
-1. **Cloner le dépôt**  
-2. **Créer un environnement virtuel**  
-   ```powershell
-   python -m venv env
-   .\env\Scripts\activate
-   ```
-3. **Installer les dépendances**  
-   ```powershell
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+```powershell
+python -m venv env
+.\env\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-## Préparer les données
-
-Place tes fichiers PDF, TXT, ou autres documents dans le dossier `data/`.
+Créer un fichier `.env` à la racine avec votre clé Groq :
+```env
+GROQ_API_KEY=votre_cle_groq
+```
 
 ## Utilisation
 
-### Indexation et recherche
+Placer vos documents dans `data/`, puis :
 
-- Pour indexer les documents et lancer une recherche :
-  ```powershell
-  python app.py
-  ```
-
-- Le script va :
-  - Charger les documents depuis `data/`
-  - Construire ou charger un index vectoriel (FAISS ou ChromaDB)
-  - Effectuer une recherche RAG et afficher un résumé
-
-### Exemple de code
-
-```python
-from src.data_loader import load_all_documents
-from src.vectorstore import FaissVectorStore
-from src.search import RAGSearch
-
-if __name__ == "__main__":
-    docs = load_all_documents("data")
-    store = FaissVectorStore("faiss_store")
-    # store.build_from_documents(docs)
-    store.load()
-    rag_search = RAGSearch()
-    query = "What is attention mechanism?"
-    summary = rag_search.search_and_summarize(query, top_k=3)
-    print("Summary:", summary)
-```
-
-## Changer de backend vectoriel
-
-- Le projet supporte FAISS et ChromaDB (voir `src/vectorstore.py`).
-- Pour utiliser ChromaDB, assure-toi que `chromadb` est bien installé et adapte la classe correspondante.
-
-## Dépendances principales
-
-- langchain
-- faiss-cpu
-- sentence-transformers
-- pymupdf, pypdf (pour la lecture PDF)
-- python-dotenv (pour la gestion des clés API)
-
-## Personnalisation
-
-- Modifie `src/data_loader.py` pour adapter le chargement de tes documents.
-- Modifie `src/embedding.py` pour changer de modèle d'embedding.
-- Modifie `src/search.py` pour ajuster la logique de recherche ou de génération.
-
-## API REST
-
-Le projet expose une API REST avec FastAPI pour interroger le modèle :
-
-### Démarrer le serveur
-
-# Lancer le serveur
-fastapi dev main.py 
-### Endpoints
-
-#### POST /call_llm/
-
-Interroge le modèle avec une question.
-
-**Request Body (JSON)**:
-```json
-{
-    "query": "Quelle est votre question ?",
-    "top_k": 3
-}
-```
-- `query` (string, required): La question à poser
-- `top_k` (integer, optional, default=3): Nombre de documents à utiliser pour le contexte
-
-**Response (JSON)**:
-```json
-{
-    "summary": "Réponse générée par le modèle..."
-}
-```
-
-### Exemples d'utilisation
-
-#### Avec curl (PowerShell)
 ```powershell
-curl -X POST "http://localhost:8000/call_llm/" `
-     -H "Content-Type: application/json" `
-     -d "{\"query\": \"What is attention mechanism?\", \"top_k\": 3}"
+# Indexation + recherche en local
+python app.py
+
+# Ou lancer l'API
+fastapi dev main.py
 ```
 
-#### Avec Python requests
 ```python
 import requests
 
 response = requests.post(
     "http://localhost:8000/call_llm/",
-    json={
-        "query": "What is attention mechanism?",
-        "top_k": 3
-    }
-)
-print(response.json()["summary"])
+    json={"query": "What is attention mechanism?", "top_k": 3}
+).json()
+
+print("Réponse :", response["summary"])
+for s in response["sources"]:
+    print(f"  source : {s['source']}, page {s['page']}")
 ```
 
-### Documentation API
+Chaque réponse est accompagnée de la liste des passages utilisés (`sources`) — fichier source, numéro de page et extrait — pour pouvoir vérifier d'où vient l'information plutôt que de faire confiance au résumé les yeux fermés.
 
-- Documentation Swagger UI : http://localhost:8000/docs
-- Documentation ReDoc : http://localhost:8000/redoc
+Documentation interactive : `http://localhost:8000/docs`
 
-## Configuration des clés API
+## Limites actuelles
 
-### Configuration de Groq
+- Pas de jeu d'évaluation formel (pas de mesure de pertinence du retrieval type recall@k ou de qualité de génération) — le projet fonctionne mais n'est pas encore mesuré.
+- Un seul backend LLM (Groq) ; le changement de modèle nécessite d'éditer `src/search.py`.
+- La citation de page ne fonctionne que pour les PDF (métadonnée `page` fournie par `PyPDFLoader`) ; les autres formats (TXT, CSV, DOCX, JSON) n'exposent que le nom du fichier source.
 
-1. Créez un fichier `.env` à la racine du projet
-2. Ajoutez votre clé API Groq :
-   ```env
-   GROQ_API_KEY=your_groq_api_key_here
-   ```
+## Ce que j'ai appris
 
-Le projet utilise Groq avec le modèle `llama-3.3-70b-versatile` pour la génération de réponses. Pour obtenir une clé API :
-1. Créez un compte sur [Groq Cloud](https://console.groq.com)
-2. Générez une nouvelle clé API dans les paramètres de votre compte
-3. Copiez la clé dans votre fichier `.env`
+- Le compromis taille de chunk / chevauchement a un impact direct sur la pertinence du retrieval : trop petit, on perd le contexte ; trop grand, on dilue la similarité vectorielle.
+- Séparer la logique métier (`src/`) de l'exposition API (`main.py`/`app.py`) permet de tester le pipeline RAG en CLI avant de l'exposer en REST — utile pour déboguer sans dépendre du serveur.
+- FAISS suffit largement pour un corpus de taille modeste et évite la complexité opérationnelle d'une base vectorielle managée pendant la phase de prototypage.
 
-## Notes
+## Prochaines étapes
 
-- Pour réindexer après ajout de documents, décommente la ligne `store.build_from_documents(docs)` dans `app.py`.
+- [ ] Ajouter un jeu de questions/réponses de référence pour mesurer la qualité du retrieval
+- [ ] Dockeriser l'API pour un déploiement reproductible
+
+## Stack
+
+Python · FastAPI · LangChain · FAISS · Sentence-Transformers · Groq API (Llama 3.3)
